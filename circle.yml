@@ -1,0 +1,18 @@
+dependencies:
+  override:
+    - npm install -g grunt-cli
+    - for i in $( ls -p | grep / ); do pushd $i && npm install && popd; done
+
+test:
+  pre:
+    - mkdir -p $CIRCLE_TEST_REPORTS/junit/
+  override:
+    # Run each test and copy the test-results.xml file to the junit dir under the folder name (without slash) +.xml
+    - for i in $( ls -p | grep / ); do pushd $i && grunt simplemocha && cp test-results.xml $CIRCLE_TEST_REPORTS/junit/${i%?}.xml && popd; done
+
+deployment:
+  release:
+    tag: /release-*/
+    commands:
+      - echo Performing release of buckler
+      - cd buckler && grunt ldeploy-prod
