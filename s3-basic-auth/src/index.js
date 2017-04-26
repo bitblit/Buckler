@@ -12,9 +12,19 @@ var cookieParser = require('cookie');
 exports.handler = function (event, context, callback) {
     try {
         console.log("Initializing, event is :" + JSON.stringify(event));
+        // Environmental variables
         var bucketMapping = createBucketMapping(process.env.bucketMapping);
         var passwordListString = process.env.passwordList;
         var maxSizeInBytes = process.env.maxSizeInBytes;
+        var directoryListingEnabled = true; //TODO: param?
+
+        // Stuff I calculate from the path
+        var path = event.path;
+        var splitIdx = path.indexOf('/', 1);
+        var bucketKey = path.substring(1, splitIdx);
+        var subpath = path.substring(splitIdx + 1);
+        var bucket = (bucketKey == null) ? null : bucketMapping[bucketKey];
+
 
         if (!event || !context || !bucketMapping || !passwordListString || !maxSizeInBytes) {
             console.log("Failed to initialize");
@@ -29,18 +39,13 @@ exports.handler = function (event, context, callback) {
                 handled = redirectOnFailedAuthentication(event, callback, passwordListString);
             }
             if (!handled) {
-                handled = generateListJson(event,callback);
+                handled = generateListJson(event,callback,directoryListingEnabled, bucket, subpath);
             }
             if (!handled) {
                 handled = processLogout(event,callback);
             }
             if (!handled) {
-                var path = event.path;
-
-                var splitIdx = path.indexOf('/', 1);
-                var bucketKey = path.substring(1, splitIdx);
-                var subpath = path.substring(splitIdx + 1);
-                var bucket = (bucketKey == null) ? null : bucketMapping[bucketKey];
+                // If we reached here, we are proxying an S3 file!
                 var msg = ('path=' + path + ' split ' + splitIdx + ' bkey=' + bucketKey + 'bucket=' + bucket + ' subpath=' + subpath);
 
                 console.log(msg);
@@ -101,17 +106,76 @@ function isBinaryContentType(contentType)
     return contentType.startsWith("image") || contentType=="application/zip";
 }
 
-function generateListJson(event, callback)
+function generateListJson(event, callback,directoryListingEnabled, bucket, subpath)
 {
     var handled = false;
-    if (event.path.endsWith("/list.json"))
+    if (directoryListingEnabled && event.path.endsWith("/list.json"))
     {
-        var response = {
-            statusCode: 200,
-            headers: {'Content-Type': 'application/json'},
-            body: {'message':'todo-list.json'}
+        handled = true;
+        var dirToList = subpath.substring(0,subpath.length-9);
+        console.log("Attempting to generate list.json for directory "+dirToList);
+
+        var s3 = new AWS.S3();
+
+        var params = {
+            Bucket: bucket,
+            Delimiter: '/',
+            Prefix: dirToList
         }
-        callback(null,response);
+
+        s3.listObjects(params, function (err, data) {
+            if (err)
+            {
+                callback(null, {
+                    statusCode: 404,
+                    headers: {
+                        "Content-Type": "text/html"
+                    },
+                    body: "Missing : " + err + " m:" + msg
+
+                })
+            }
+            else
+            {
+                delete (data.Marker);
+                delete (data.Name);
+                delete (data.Prefix);
+                delete (data.Delimiter);
+                delete (data.MaxKeys);
+
+                var files = [];
+                var folders = [];
+                data.Contents.forEach(function(val){
+                    files.push(
+                        {
+                            name : val.Key.substring(dirToList.length),
+                            lastModified: val.LastModified,
+                            size: val.Size
+                        }
+                    );
+                });
+                data.CommonPrefixes.forEach(function(val){
+                    folders.push(
+                       val.Prefix.substring(dirToList.length)
+                   )
+                });
+                delete (data.Contents);
+                delete (data.CommonPrefixes);
+                data['files']=files;
+                data['folders']=folders;
+
+
+                callback(null, {
+                    statusCode: 200,
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(data)
+
+                })
+
+            }
+        });
     }
     return handled;
 }
@@ -124,9 +188,10 @@ function processLogout(event, callback)
         var response = {
             statusCode: 200,
             headers: {'Content-Type': 'application/json'},
-            body: {'message':'todo-logout'}
+            body: JSON.stringify({'message':'todo-logout'})
         }
         callback(null,response);
+        handled = true;
     }
     return handled;
 }
