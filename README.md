@@ -55,9 +55,6 @@ of the file being served, a 301 to a pre-signed url is served instead.  Set this
 
 * Hash the password (server provides salt)
 * Redirect on large bodies
-* Cleanup the login page
-* Logout endpoint
-* Cookie timeout?
 * Deployment script for people who aren't me
 * .unzip handler
 
@@ -65,6 +62,9 @@ of the file being served, a 301 to a pre-signed url is served instead.  Set this
 X Verify binaries work (pictures)
 X list.json endpoint
 X Login via parameter
+X Logout endpoint
+X Cleanup the login page
+X Cookie timeout?
 
 
 
