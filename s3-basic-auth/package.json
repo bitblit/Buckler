@@ -32,9 +32,11 @@
     "mocha-circleci-reporter": "0.0.1"
   },
   "dependencies": {
+    "adm-zip": "^0.4.7",
     "cookie": "^0.3.1"
   },
   "bundledDependencies": [
-    "cookie"
+    "cookie",
+    "adm-zip"
   ]
 }

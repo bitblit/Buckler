@@ -1,6 +1,7 @@
 var fs = require('fs');
 var AWS = require('aws-sdk');
 var cookieParser = require('cookie');
+var AdmZip = require('adm-zip');
 
 'use strict';
 
@@ -16,6 +17,7 @@ exports.handler = function (event, context, callback) {
         var bucketMapping = createBucketMapping(process.env.bucketMapping);
         var passwordListString = process.env.passwordList;
         var maxSizeInBytes = process.env.maxSizeInBytes;
+        var siteName = (process.env.siteName) ? process.env.siteName : 'Buckler';
         var directoryListingEnabled = true; //TODO: param?
 
         // Stuff I calculate from the path
@@ -36,27 +38,52 @@ exports.handler = function (event, context, callback) {
             // First, if a password was manually passed, set the cookie and redirect
             var handled = redirectOnQueryStringPassword(event, callback);
             if (!handled) {
-                handled = processLogout(event,callback);
+                handled = processLogout(event, callback);
             }
             if (!handled) {
                 handled = redirectOnFailedAuthentication(event, callback, passwordListString);
             }
             if (!handled) {
-                handled = generateListJson(event,callback,directoryListingEnabled, bucket, subpath);
+                handled = generateListJson(event, callback, directoryListingEnabled, bucket, subpath);
             }
             if (!handled) {
                 // If we reached here, we are proxying an S3 file!
                 var msg = ('path=' + path + ' split ' + splitIdx + ' bkey=' + bucketKey + 'bucket=' + bucket + ' subpath=' + subpath);
 
-                console.log(msg);
-
                 var s3 = new AWS.S3();
                 var params = {Bucket: bucket, Key: subpath}
 
-                console.log("Calling s3, params = " + JSON.stringify(params));
-                s3.getObject(params, function (err, data) {
-                    if (err) {
-                        console.log("S3 err = " + JSON.stringify(err));
+                s3.headObject(params).promise().then(function (meta) {
+                    console.log("Max is "+maxSizeInBytes+" meta "+JSON.stringify(meta)+'-'+msg);
+                    var size = parseInt(meta.ContentLength);
+                    if (size>maxSizeInBytes)
+                    {
+                        console.log("Size is " + size + ", larger than " + maxSizeInBytes + " redirecting");
+                        const signedUrlExpireSeconds = 60 * 5; // 5 minute timeout
+                        const presigned = s3.getSignedUrl('getObject', {
+                            Bucket: params.Bucket,
+                            Key: params.Key,
+                            Expires: signedUrlExpireSeconds
+                        });
+
+                        callback(null,{
+                            statusCode: 302,
+                            headers: {
+                                "Location": presigned
+                            },
+                            body: null
+                        });
+                    }
+                    else
+                    {
+                        console.log("Calling s3, params = " + JSON.stringify(params));
+                        s3.getObject(params).promise().then(function(data) {
+                            processS3Response(event, callback, data);
+                        });
+                    }
+                    }
+                )
+                    .catch(function (err) {
                         callback(null, {
                             statusCode: 404,
                             headers: {
@@ -65,27 +92,7 @@ exports.handler = function (event, context, callback) {
                             body: "Missing : " + err + " m:" + msg
 
                         })
-                    }
-                    else {
-                        console.log("S3 data = " + JSON.stringify(data));
-
-                        var base64Encoded = isBinaryContentType(data.ContentType);
-                        var body = (base64Encoded) ? data.Body.toString('base64') : data.Body.toString();
-
-                        var response = {
-                            statusCode: 200,
-                            isBase64Encoded: base64Encoded,
-                            headers: {
-                                "Content-Type": data.ContentType,
-                            },
-                            body: body//new Buffer(data.Body, 'base64')//Array.prototype.slice.call(data.Body,0)//.toString()
-                        };
-
-                        console.log("Response:" + JSON.stringify(response));
-
-                        callback(null, response);
-                    }
-                });
+                    });
             }
 
         }
@@ -101,19 +108,54 @@ exports.handler = function (event, context, callback) {
 
 };
 
-function isBinaryContentType(contentType)
-{
-    return contentType.startsWith("image") || contentType=="application/zip";
+function processS3Response(event, callback, data) {
+    var response = {};
+    if (!!event.queryStringParameters && !!event.queryStringParameters.unzipTo) {
+        console.log("Unzipping first file of content to new content type:" + event.queryStringParameters.unzipTo);
+        var zip = new AdmZip(data.Body);
+        var zipEntries = zip.getEntries();
+        console.log("Found " + zipEntries.length + " entries");
+
+        var base64Encoded = isBinaryContentType(event.queryStringParameters.unzipTo);
+        var contents = zip.readAsText(zipEntries[0]);
+        var body = (base64Encoded) ? new Buffer(contents).toString('base64') : contents;
+
+        response = {
+            statusCode: 200,
+            isBase64Encoded: base64Encoded,
+            headers: {
+                "Content-Type": event.queryStringParameters.unzipTo,
+            },
+            body: body
+        };
+    }
+    else {
+        var base64Encoded = isBinaryContentType(data.ContentType);
+        var body = (base64Encoded) ? data.Body.toString('base64') : data.Body.toString();
+
+        response = {
+            statusCode: 200,
+            isBase64Encoded: base64Encoded,
+            headers: {
+                "Content-Type": data.ContentType,
+            },
+            body: body
+        };
+    }
+
+    callback(null, response);
 }
 
-function generateListJson(event, callback,directoryListingEnabled, bucket, subpath)
-{
+function isBinaryContentType(contentType) {
+    return contentType.startsWith("image") || contentType == "application/zip";
+}
+
+function generateListJson(event, callback, directoryListingEnabled, bucket, subpath) {
     var handled = false;
-    if (directoryListingEnabled && event.path.endsWith("/list.json"))
-    {
+    if (directoryListingEnabled && event.path.endsWith("/list.json")) {
         handled = true;
-        var dirToList = subpath.substring(0,subpath.length-9);
-        console.log("Attempting to generate list.json for directory "+dirToList);
+        var dirToList = subpath.substring(0, subpath.length - 9);
+        console.log("Attempting to generate list.json for directory " + dirToList);
 
         var s3 = new AWS.S3();
 
@@ -124,8 +166,7 @@ function generateListJson(event, callback,directoryListingEnabled, bucket, subpa
         }
 
         s3.listObjects(params, function (err, data) {
-            if (err)
-            {
+            if (err) {
                 callback(null, {
                     statusCode: 404,
                     headers: {
@@ -135,8 +176,7 @@ function generateListJson(event, callback,directoryListingEnabled, bucket, subpa
 
                 })
             }
-            else
-            {
+            else {
                 delete (data.Marker);
                 delete (data.Name);
                 delete (data.Prefix);
@@ -145,24 +185,24 @@ function generateListJson(event, callback,directoryListingEnabled, bucket, subpa
 
                 var files = [];
                 var folders = [];
-                data.Contents.forEach(function(val){
+                data.Contents.forEach(function (val) {
                     files.push(
                         {
-                            name : val.Key.substring(dirToList.length),
+                            name: val.Key.substring(dirToList.length),
                             lastModified: val.LastModified,
                             size: val.Size
                         }
                     );
                 });
-                data.CommonPrefixes.forEach(function(val){
+                data.CommonPrefixes.forEach(function (val) {
                     folders.push(
-                       val.Prefix.substring(dirToList.length)
-                   )
+                        val.Prefix.substring(dirToList.length)
+                    )
                 });
                 delete (data.Contents);
                 delete (data.CommonPrefixes);
-                data['files']=files;
-                data['folders']=folders;
+                data['files'] = files;
+                data['folders'] = folders;
 
 
                 callback(null, {
@@ -180,13 +220,12 @@ function generateListJson(event, callback,directoryListingEnabled, bucket, subpa
     return handled;
 }
 
-function processLogout(event, callback)
-{
+function processLogout(event, callback) {
     var handled = false;
 
     if (!!event.queryStringParameters && !!event.queryStringParameters.logout) {
-        handled=true;
-        dumpLocalFile(callback,"/logout.html");
+        handled = true;
+        dumpLocalFile(callback, "/logout.html");
     }
 
     return handled;
@@ -203,8 +242,7 @@ function redirectOnFailedAuthentication(event, callback, passwordListString) {
     return handled;
 }
 
-function dumpLocalFile(callback, filename)
-{
+function dumpLocalFile(callback, filename, replacements) {
     fs.readFile(__dirname + filename, 'utf8', function (err, data) {
         var response = {
             statusCode: 200,
@@ -241,8 +279,7 @@ function redirectOnQueryStringPassword(event, callback) {
     return handled;
 }
 
-function calculateCurrentPath(event)
-{
+function calculateCurrentPath(event) {
     var stage = event.requestContext.stage;
     var currentPath = '/' + stage + event.path;
     return currentPath;
