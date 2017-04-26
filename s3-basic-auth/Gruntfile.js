@@ -4,7 +4,7 @@ module.exports = function(grunt) {
     clean: ["dist"],
     env : {
             invoke : {
-                bucketMapping: '{"a":"bucket1", "b":"bucket2"}',
+                bucketMapping: 'a=bucket1,b=bucket2',
                 passwordList: 'abc,def',
                 maxSizeInBytes: 1000
             }

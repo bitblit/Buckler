@@ -17,7 +17,7 @@ http://test.com/A/x/y.txt
 You'll need the following things installed:
 * NodeJS 6.10 : Go to https://nodejs.org/en/download/ and run the installer
 * NPM (this came with NodeJS)
-* Grunt (npm install grunt -g)
+* Grunt (npm install grunt -g) (npm install grunt-cli -g)
 
 1) Create a new Lambda function, NodeJS 6.10 (grab the arn) 
 1a) May need to create a role - this role should have ListObject and GetObject on the bucket(s) to be proxied
