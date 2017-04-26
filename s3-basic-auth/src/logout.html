@@ -1,0 +1,20 @@
+<html>
+
+<head>
+    <title>Buckler Logout</title>
+</head>
+<body>
+</body>
+
+<script>
+    document.cookie = "BucklerAuthorization=;expires=Thu, 01 Jan 1970 00:00:01 GMT;path=/";
+    var newLocation = window.location.href;
+    if (newLocation.indexOf("?")!=-1)
+    {
+        newLocation= newLocation.substring(0,newLocation.indexOf("?"));
+    }
+
+    window.location = newLocation;
+</script>
+
+</html>

@@ -36,13 +36,13 @@ exports.handler = function (event, context, callback) {
             // First, if a password was manually passed, set the cookie and redirect
             var handled = redirectOnQueryStringPassword(event, callback);
             if (!handled) {
+                handled = processLogout(event,callback);
+            }
+            if (!handled) {
                 handled = redirectOnFailedAuthentication(event, callback, passwordListString);
             }
             if (!handled) {
                 handled = generateListJson(event,callback,directoryListingEnabled, bucket, subpath);
-            }
-            if (!handled) {
-                handled = processLogout(event,callback);
             }
             if (!handled) {
                 // If we reached here, we are proxying an S3 file!
@@ -183,16 +183,12 @@ function generateListJson(event, callback,directoryListingEnabled, bucket, subpa
 function processLogout(event, callback)
 {
     var handled = false;
-    if (event.path.endsWith("/logout"))
-    {
-        var response = {
-            statusCode: 200,
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({'message':'todo-logout'})
-        }
-        callback(null,response);
-        handled = true;
+
+    if (!!event.queryStringParameters && !!event.queryStringParameters.logout) {
+        handled=true;
+        dumpLocalFile(callback,"/logout.html");
     }
+
     return handled;
 }
 
@@ -202,38 +198,41 @@ function redirectOnFailedAuthentication(event, callback, passwordListString) {
     if (!validAuthentication(cookie, passwordListString)) {
         console.log("Failed authentication");
         handled = true;
-        fs.readFile(__dirname + '/challenge.html', 'utf8', function (err, data) {
-            var response = {
-                statusCode: 200,
-                headers: {'Content-Type': 'text/html'},
-                body: data
-            }
-
-            if (!!err) {
-                response.statusCode = 500;
-                response.body = "Error : " + err;
-            }
-
-            callback(null, response);
-        });
+        dumpLocalFile(callback, '/challenge.html');
     }
     return handled;
 }
+
+function dumpLocalFile(callback, filename)
+{
+    fs.readFile(__dirname + filename, 'utf8', function (err, data) {
+        var response = {
+            statusCode: 200,
+            headers: {'Content-Type': 'text/html'},
+            body: data
+        }
+
+        if (!!err) {
+            response.statusCode = 500;
+            response.body = "Error : " + err;
+        }
+
+        callback(null, response);
+    });
+}
+
 
 function redirectOnQueryStringPassword(event, callback) {
     var handled = false;
     if (!!event.queryStringParameters && !!event.queryStringParameters.p) {
         console.log("Processing query string password");
         var newCookieValue = "BucklerAuthorization=" + new Buffer(event.queryStringParameters.p).toString('base64');
-        var stage = event.requestContext.stage;
-        var newPath = '/' + stage + event.path;
-
 
         callback(null, {
             statusCode: 301,
             headers: {
                 'Set-Cookie': newCookieValue,
-                'Location': newPath
+                'Location': calculateCurrentPath(event)
             },
             body: ''
         })
@@ -241,6 +240,14 @@ function redirectOnQueryStringPassword(event, callback) {
     }
     return handled;
 }
+
+function calculateCurrentPath(event)
+{
+    var stage = event.requestContext.stage;
+    var currentPath = '/' + stage + event.path;
+    return currentPath;
+}
+
 
 function validAuthentication(authHeader, passwordListString) {
     var valid = false;

@@ -54,18 +54,17 @@ of the file being served, a 301 to a pre-signed url is served instead.  Set this
 ## TODO
 
 * Hash the password (server provides salt)
-* list.json endpoint
-* logout endpoint
 * Redirect on large bodies
 * Cleanup the login page
 * Logout endpoint
-* Login via parameter
 * Cookie timeout?
 * Deployment script for people who aren't me
 * .unzip handler
 
 ## Done
 X Verify binaries work (pictures)
+X list.json endpoint
+X Login via parameter
 
 
 
