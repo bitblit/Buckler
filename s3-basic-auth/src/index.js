@@ -20,13 +20,7 @@ exports.handler = function (event, context, callback) {
         var siteName = (process.env.siteName) ? process.env.siteName : 'Buckler';
         var directoryListingEnabled = true; //TODO: param?
 
-        // Stuff I calculate from the path
-        var path = event.path;
-        var splitIdx = path.indexOf('/', 1);
-        var bucketKey = path.substring(1, splitIdx);
-        var subpath = path.substring(splitIdx + 1);
-        var bucket = (bucketKey == null) ? null : bucketMapping[bucketKey];
-
+        var pathParts = createPathDescriptor(event, bucketMapping);
 
         if (!event || !context || !bucketMapping || !passwordListString || !maxSizeInBytes) {
             console.log("Failed to initialize");
@@ -48,10 +42,10 @@ exports.handler = function (event, context, callback) {
             }
             if (!handled) {
                 // If we reached here, we are proxying an S3 file!
-                var msg = ('path=' + path + ' split ' + splitIdx + ' bkey=' + bucketKey + 'bucket=' + bucket + ' subpath=' + subpath);
+                var msg = ('pathParts='+JSON.stringify(pathParts));
 
                 var s3 = new AWS.S3();
-                var params = {Bucket: bucket, Key: subpath}
+                var params = {Bucket: pathParts.bucketName, Key: pathParts.s3Key};
 
                 s3.headObject(params).promise().then(function (meta) {
                     console.log("Max is "+maxSizeInBytes+" meta "+JSON.stringify(meta)+'-'+msg);
@@ -61,8 +55,8 @@ exports.handler = function (event, context, callback) {
                         console.log("Size is " + size + ", larger than " + maxSizeInBytes + " redirecting");
                         const signedUrlExpireSeconds = 60 * 5; // 5 minute timeout
                         const presigned = s3.getSignedUrl('getObject', {
-                            Bucket: params.Bucket,
-                            Key: params.Key,
+                            Bucket: pathParts.bucketName,
+                            Key: pathParts.s3Key,
                             Expires: signedUrlExpireSeconds
                         });
 
@@ -76,10 +70,34 @@ exports.handler = function (event, context, callback) {
                     }
                     else
                     {
-                        console.log("Calling s3, params = " + JSON.stringify(params));
-                        s3.getObject(params).promise().then(function(data) {
-                            processS3Response(event, callback, data);
-                        });
+                        if (meta.ContentType=='application/zip' && !!event.queryStringParameters && !!event.queryStringParameters.unzipTo)
+                        {
+                            console.log("Unzipping first file of content to new content type:" + event.queryStringParameters.unzipTo);
+                            var zip = new AdmZip(data.Body);
+                            var zipEntries = zip.getEntries();
+                            console.log("Found " + zipEntries.length + " entries");
+
+                            var base64Encoded = isBinaryContentType(event.queryStringParameters.unzipTo);
+                            var contents = zip.readAsText(zipEntries[0]);
+                            var body = (base64Encoded) ? new Buffer(contents).toString('base64') : contents;
+
+                            response = {
+                                statusCode: 200,
+                                isBase64Encoded: base64Encoded,
+                                headers: {
+                                    "Content-Type": event.queryStringParameters.unzipTo,
+                                },
+                                body: body
+                            };
+
+                        }
+                        else
+                        {
+                            console.log("Calling s3, params = " + JSON.stringify(params));
+                            s3.getObject(params).promise().then(function(data) {
+                                processS3Response(event, callback, data);
+                            });
+                        }
                     }
                     }
                 )
@@ -108,42 +126,39 @@ exports.handler = function (event, context, callback) {
 
 };
 
+function createPathDescriptor(event, bucketMapping)
+{
+    var stage = event.requestContext.stage;
+    var pathWithoutStage = (event.path.startsWith('/'+stage))?event.path.substring(stage.length+1):event.path;
+    var rootPath = '/'+stage+pathWithoutStage;
+    var splitIdx = pathWithoutStage.indexOf('/', 1);
+    var bucketId = pathWithoutStage.substring(1, splitIdx);
+    var s3Key = pathWithoutStage.substring(splitIdx + 1);
+    var bucketName = (bucketId == null) ? null : bucketMapping[bucketId];
+
+    return {
+        stage : stage,
+        pathWithoutStage : pathWithoutStage,
+        rootPath : rootPath,
+        splitIdx : splitIdx,
+        bucketId : bucketId,
+        s3Key : s3Key,
+        bucketName : bucketName
+    }
+}
+
 function processS3Response(event, callback, data) {
-    var response = {};
-    if (!!event.queryStringParameters && !!event.queryStringParameters.unzipTo) {
-        console.log("Unzipping first file of content to new content type:" + event.queryStringParameters.unzipTo);
-        var zip = new AdmZip(data.Body);
-        var zipEntries = zip.getEntries();
-        console.log("Found " + zipEntries.length + " entries");
+    var base64Encoded = isBinaryContentType(data.ContentType);
+    var body = (base64Encoded) ? data.Body.toString('base64') : data.Body.toString();
 
-        var base64Encoded = isBinaryContentType(event.queryStringParameters.unzipTo);
-        var contents = zip.readAsText(zipEntries[0]);
-        var body = (base64Encoded) ? new Buffer(contents).toString('base64') : contents;
-
-        response = {
-            statusCode: 200,
-            isBase64Encoded: base64Encoded,
-            headers: {
-                "Content-Type": event.queryStringParameters.unzipTo,
-            },
-            body: body
-        };
-    }
-    else {
-        var base64Encoded = isBinaryContentType(data.ContentType);
-        var body = (base64Encoded) ? data.Body.toString('base64') : data.Body.toString();
-
-        response = {
-            statusCode: 200,
-            isBase64Encoded: base64Encoded,
-            headers: {
-                "Content-Type": data.ContentType,
-            },
-            body: body
-        };
-    }
-
-    callback(null, response);
+    callback(null, {
+        statusCode: 200,
+        isBase64Encoded: base64Encoded,
+        headers: {
+            "Content-Type": data.ContentType
+        },
+        body: body
+    });
 }
 
 function isBinaryContentType(contentType) {

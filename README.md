@@ -54,11 +54,11 @@ of the file being served, a 301 to a pre-signed url is served instead.  Set this
 ## TODO
 
 * Hash the password (server provides salt)
-* Redirect on large bodies
 * Deployment script for people who aren't me
 * .unzip handler
 
 ## Done
+X Redirect on large bodies
 X Verify binaries work (pictures)
 X list.json endpoint
 X Login via parameter
