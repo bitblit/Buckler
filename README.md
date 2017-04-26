@@ -62,9 +62,10 @@ of the file being served, a 301 to a pre-signed url is served instead.  Set this
 * Login via parameter
 * Cookie timeout?
 * Deployment script for people who aren't me
-* Verify binaries work (pictures)
 * .unzip handler
 
+## Done
+X Verify binaries work (pictures)
 
 
 

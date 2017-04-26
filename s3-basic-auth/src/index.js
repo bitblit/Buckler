@@ -29,6 +29,12 @@ exports.handler = function (event, context, callback) {
                 handled = redirectOnFailedAuthentication(event, callback, passwordListString);
             }
             if (!handled) {
+                handled = generateListJson(event,callback);
+            }
+            if (!handled) {
+                handled = processLogout(event,callback);
+            }
+            if (!handled) {
                 var path = event.path;
 
                 var splitIdx = path.indexOf('/', 1);
@@ -66,7 +72,6 @@ exports.handler = function (event, context, callback) {
                             isBase64Encoded: base64Encoded,
                             headers: {
                                 "Content-Type": data.ContentType,
-                                "Content-Length": data.ContentLength,
                             },
                             body: body//new Buffer(data.Body, 'base64')//Array.prototype.slice.call(data.Body,0)//.toString()
                         };
@@ -94,6 +99,36 @@ exports.handler = function (event, context, callback) {
 function isBinaryContentType(contentType)
 {
     return contentType.startsWith("image") || contentType=="application/zip";
+}
+
+function generateListJson(event, callback)
+{
+    var handled = false;
+    if (event.path.endsWith("/list.json"))
+    {
+        var response = {
+            statusCode: 200,
+            headers: {'Content-Type': 'application/json'},
+            body: {'message':'todo-list.json'}
+        }
+        callback(null,response);
+    }
+    return handled;
+}
+
+function processLogout(event, callback)
+{
+    var handled = false;
+    if (event.path.endsWith("/logout"))
+    {
+        var response = {
+            statusCode: 200,
+            headers: {'Content-Type': 'application/json'},
+            body: {'message':'todo-logout'}
+        }
+        callback(null,response);
+    }
+    return handled;
 }
 
 function redirectOnFailedAuthentication(event, callback, passwordListString) {
