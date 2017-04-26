@@ -1,0 +1,37 @@
+<html>
+
+<head>
+    <title>Buckler Authentication</title>
+</head>
+<body>
+    <div id="showAuth">
+        <h1>Buckler Authentication</h1>
+    </div>
+
+    <div id="authFailed" style="display:none">
+        Authentication Failed
+    </div>
+
+</body>
+
+<script>
+    var password = null;
+
+    var count = 0;
+    while (!password && count<5)
+    {
+        count++;
+        password = window.prompt("Please enter your password");
+        if (!!password)
+        {
+            var cookieString = "BucklerAuthorization="+btoa(password);
+            document.cookie = cookieString;
+            window.location.reload();
+        }
+    }
+    //document.getElementById("showAuth").
+
+
+</script>
+
+</html>
