@@ -73,7 +73,7 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-env');
 
   // SimpleMocha tests the services, lambda_invoke tests the lambda function
-  grunt.registerTask('default', ['env:invoke','clean','lambda_package','jshint','simplemocha','lambda_invoke:png','lambda_invoke']);
+  grunt.registerTask('default', ['env:invoke','clean','lambda_package','jshint','simplemocha','lambda_invoke']);
   grunt.registerTask('ldeploy', ['clean','lambda_package', 'lambda_deploy:default']);
   grunt.registerTask('ldeploy-prod', ['clean','lambda_package', 'lambda_deploy:production']);
 

@@ -13,7 +13,7 @@ exports.handler = function (event, context, callback) {
     var userList = process.env.userList;
     var maxSizeInBytes = process.env.maxSizeInBytes;
 
-    if (!event || !context || !bucketMapping || !userList || !maxSize)
+    if (!event || !context || !bucketMapping || !userList || !maxSizeInBytes)
     {
         console.log("Failed to initialize");
         callback(null,{'status':'error','code':400,'message':'A required field was missing'});
