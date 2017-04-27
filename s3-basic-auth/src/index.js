@@ -19,6 +19,7 @@ exports.handler = function (event, context, callback) {
         var maxSizeInBytes = process.env.maxSizeInBytes;
         var siteName = (process.env.siteName) ? process.env.siteName : 'Buckler';
         var directoryListingEnabled = true; //TODO: param?
+        var defaultFile = 'index.html'; //TODO: param?
 
         var pathParts = createPathDescriptor(event, bucketMapping);
 
@@ -67,32 +68,37 @@ exports.handler = function (event, context, callback) {
                             });
                         }
                         else {
+                            /*
+                            TODO: Unzip in a stream to a temporary S3 location, then send a 302 redirect to a presigned url
+                            for that location
                             if (meta.ContentType == 'application/zip' && !!event.queryStringParameters && !!event.queryStringParameters.unzipTo) {
                                 console.log("Unzipping first file of content to new content type:" + event.queryStringParameters.unzipTo);
-                                var zip = new AdmZip(data.Body);
-                                var zipEntries = zip.getEntries();
-                                console.log("Found " + zipEntries.length + " entries");
 
-                                var base64Encoded = isBinaryContentType(event.queryStringParameters.unzipTo);
-                                var contents = zip.readAsText(zipEntries[0]);
-                                var body = (base64Encoded) ? new Buffer(contents).toString('base64') : contents;
+                                s3.getObject(params).promise().then(function (data) {
+                                    var zip = new AdmZip(data.Body);
+                                    var zipEntries = zip.getEntries();
+                                    console.log("Found " + zipEntries.length + " entries");
 
-                                response = {
-                                    statusCode: 200,
-                                    isBase64Encoded: base64Encoded,
-                                    headers: {
-                                        "Content-Type": event.queryStringParameters.unzipTo,
-                                    },
-                                    body: body
-                                };
+                                    var base64Encoded = isBinaryContentType(event.queryStringParameters.unzipTo);
+                                    var contents = zip.readAsText(zipEntries[0]);
+                                    var body = (base64Encoded) ? new Buffer(contents).toString('base64') : contents;
 
+                                    response = {
+                                        statusCode: 200,
+                                        isBase64Encoded: base64Encoded,
+                                        headers: {
+                                            "Content-Type": event.queryStringParameters.unzipTo,
+                                        },
+                                        body: body
+                                    };
+                                });
                             }
-                            else {
+                            else {*/
                                 console.log("Calling s3, params = " + JSON.stringify(params));
                                 s3.getObject(params).promise().then(function (data) {
                                     processS3Response(event, callback, data);
                                 });
-                            }
+                            //}
                         }
                     }
                 )
@@ -101,6 +107,18 @@ exports.handler = function (event, context, callback) {
                         var errMessage = err +" stack " + err.stack;
                         if (err.statusCode==404)
                         {
+                            if (pathParts.s3Key.endsWith("/"))
+                            {
+                                callback(null, {
+                                    statusCode: 302,
+                                    headers: {
+                                        "Location": pathParts.rootPath+defaultFile
+                                    },
+                                    body: null
+                                });
+                            }
+
+
                             errMessage = "You requested a file that does not exist (404)";
                         }
 
@@ -137,6 +155,15 @@ function createPathDescriptor(event, bucketMapping) {
     var s3Key = pathWithoutStage.substring(splitIdx + 1);
     var bucketName = (bucketId == null) ? null : bucketMapping[bucketId];
     var s3ParentKey = s3Key.substring(0, s3Key.lastIndexOf('/') + 1);
+
+    // Default to the root bucket
+    if (!bucketName && !!bucketMapping.root)
+    {
+        // Use the root bucket and fix the path
+        bucketName = bucketMapping.root;
+        s3Key = bucketId+'/'+s3Key;
+        bucketId = 'root';
+    }
 
     return {
         stage: stage,
@@ -334,5 +361,11 @@ function createBucketMapping(input) {
         var parts = split[i].split("=");
         rval[parts[0]] = parts[1];
     }
+
+    if (!rval.root)
+    {
+        console.log("Warning!  No root bucket defined");
+    }
+
     return rval;
 }
