@@ -25,7 +25,7 @@ exports.handler = function (event, context, callback) {
 
         if (!event || !context || !bucketMapping || !passwordListString || !maxSizeInBytes) {
             console.log("Failed to initialize");
-            callback(null, {'status': 'error', 'code': 400, 'message': 'A required field was missing'});
+            finish(callback, {'status': 'error', 'code': 400, 'message': 'A required field was missing'});
         }
         else {
             console.log("PathParts: " + JSON.stringify(pathParts) + " Bucket mapping: " + JSON.stringify(bucketMapping));
@@ -59,7 +59,7 @@ exports.handler = function (event, context, callback) {
                                 Expires: signedUrlExpireSeconds
                             });
 
-                            callback(null, {
+                            finish(callback, {
                                 statusCode: 302,
                                 headers: {
                                     "Location": presigned
@@ -109,7 +109,7 @@ exports.handler = function (event, context, callback) {
                         {
                             if (pathParts.s3Key.endsWith("/"))
                             {
-                                callback(null, {
+                                finish(callback,  {
                                     statusCode: 302,
                                     headers: {
                                         "Location": pathParts.rootPath+defaultFile
@@ -122,7 +122,7 @@ exports.handler = function (event, context, callback) {
                             errMessage = "You requested a file that does not exist (404)";
                         }
 
-                        callback(null, {
+                        finish(callback,  {
                             statusCode: 404,
                             headers: {
                                 "Content-Type": "text/html"
@@ -141,7 +141,7 @@ exports.handler = function (event, context, callback) {
             headers: {'Content-Type': 'text/html'},
             body: "Internal Server Error : " + err + " stack " + err.stack
         }
-        callback(null, response);
+        finish(callback,  response);
     }
 
 };
@@ -161,8 +161,15 @@ function createPathDescriptor(event, bucketMapping) {
     {
         // Use the root bucket and fix the path
         bucketName = bucketMapping.root;
-        s3Key = bucketId+'/'+s3Key;
+        s3ParentKey = bucketId+"/";
+        s3Key = s3ParentKey+s3Key;
         bucketId = 'root';
+    }
+
+    // If we are in the root, it can lead to leading / on the s3Key
+    while (s3Key.startsWith('/'))
+    {
+        s3Key = s3Key.substring(1); // Yeah, I know its inefficient - I will fix it later
     }
 
     return {
@@ -180,7 +187,7 @@ function processS3Response(event, callback, data) {
     var base64Encoded = isBinaryContentType(data.ContentType);
     var body = (base64Encoded) ? data.Body.toString('base64') : data.Body.toString();
 
-    callback(null, {
+    finish(callback, {
         statusCode: 200,
         isBase64Encoded: base64Encoded,
         headers: {
@@ -210,7 +217,7 @@ function generateListJson(event, callback, directoryListingEnabled, pathParts) {
 
         s3.listObjects(params, function (err, data) {
             if (err) {
-                callback(null, {
+                finish(callback,  {
                     statusCode: 404,
                     headers: {
                         "Content-Type": "text/html"
@@ -247,7 +254,7 @@ function generateListJson(event, callback, directoryListingEnabled, pathParts) {
                 data['folders'] = folders;
 
 
-                callback(null, {
+                finish(callback,  {
                     statusCode: 200,
                     headers: {
                         "Content-Type": "application/json"
@@ -297,7 +304,7 @@ function dumpLocalFile(callback, filename, replacements) {
             response.body = "Error : " + err;
         }
 
-        callback(null, response);
+        finish(callback,  response);
     });
 }
 
@@ -308,7 +315,7 @@ function redirectOnQueryStringPassword(event, callback) {
         console.log("Processing query string password");
         var newCookieValue = "BucklerAuthorization=" + new Buffer(event.queryStringParameters.p).toString('base64');
 
-        callback(null, {
+        finish(callback,  {
             statusCode: 301,
             headers: {
                 'Set-Cookie': newCookieValue,
@@ -368,4 +375,25 @@ function createBucketMapping(input) {
     }
 
     return rval;
+}
+
+function finish(callback, response)
+{
+    if (!callback || !response)
+    {
+        throw Exception("Missing callback or response");
+    }
+    if (!response.statusCode)
+    {
+        console.log("WARNING: no status code");
+        response.statusCode=200;
+    }
+    if (!response.headers)
+    {
+        response.headers={};
+    }
+
+    response.headers['Access-Control-Allow-Origin']='*';
+
+    callback(null,response);
 }

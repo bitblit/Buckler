@@ -35,6 +35,8 @@ You'll need the following things installed:
 3) Run "npm install"
 4) 
 
+## The "root" bucket
+
 ## Binary Support
 If your images/other binary data aren't showing up correctly, you may need to enable binary support in API gateway.
 The smartest way to do this is just add */* as a binary type (as of 04/2017) since it doesn't hurt the text
